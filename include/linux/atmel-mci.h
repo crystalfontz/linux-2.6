@@ -4,6 +4,7 @@
 #define ATMEL_MCI_MAX_NR_SLOTS	2
 
 #include <linux/dw_dmac.h>
+#include <mach/at_hdmac.h>
 
 /**
  * struct mci_slot_pdata - board-specific per-slot configuration
@@ -32,7 +33,7 @@ struct mci_slot_pdata {
  * @slot: Per-slot configuration data.
  */
 struct mci_platform_data {
-	struct dw_dma_slave	dma_slave;
+	void			*dma_slave;
 	struct mci_slot_pdata	slot[ATMEL_MCI_MAX_NR_SLOTS];
 };
 

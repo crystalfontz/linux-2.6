@@ -277,7 +277,7 @@ config TOUCHSCREEN_TOUCHWIN
 
 config TOUCHSCREEN_ATMEL_TSADCC
 	tristate "Atmel Touchscreen Interface"
-	depends on ARCH_AT91SAM9RL
+	depends on ARCH_AT91SAM9RL || ARCH_AT91SAM9G45 || ARCH_AT91SAM9M10
 	default y
 	help
 	  Say Y here if you have a 4-wire touchscreen connected to the

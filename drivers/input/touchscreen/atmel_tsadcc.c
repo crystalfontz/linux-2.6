@@ -22,6 +22,8 @@
 #include <linux/clk.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
+#include <mach/board.h>
+#include <mach/cpu.h>
 
 /* Register definitions based on AT91SAM9RL64 preliminary draft datasheet */
 
@@ -36,7 +38,9 @@
 #define	  ATMEL_TSADCC_LOWRES	(1    <<  4)	/* Resolution selection */
 #define	  ATMEL_TSADCC_SLEEP	(1    <<  5)	/* Sleep mode */
 #define	  ATMEL_TSADCC_PENDET	(1    <<  6)	/* Pen Detect selection */
+#define	  ATMEL_TSADCC_PRES	(1    <<  7)	/* Pressure Measurement Selection */
 #define	  ATMEL_TSADCC_PRESCAL	(0x3f <<  8)	/* Prescalar Rate Selection */
+#define	  ATMEL_TSADCC_EPRESCAL	(0xff <<  8)	/* Prescalar Rate Selection (Extended) */
 #define	  ATMEL_TSADCC_STARTUP	(0x7f << 16)	/* Start Up time */
 #define	  ATMEL_TSADCC_SHTIM	(0xf  << 24)	/* Sample & Hold time */
 #define	  ATMEL_TSADCC_PENDBC	(0xf  << 28)	/* Pen Detect debouncing time */
@@ -84,7 +88,14 @@
 #define ATMEL_TSADCC_CDR4	0x40	/* Channel Data 4 */
 #define ATMEL_TSADCC_CDR5	0x44	/* Channel Data 5 */
 
-#define ADC_CLOCK	1000000
+#define ATMEL_TSADCC_XPOS	0x50
+#define ATMEL_TSADCC_Z1DAT	0x54
+#define ATMEL_TSADCC_Z2DAT	0x58
+
+#define PRESCALER_VAL(x)	((x) >> 8)
+
+#define ADC_DEFAULT_CLOCK	100000
+#define COUNT_MAX		20
 
 struct atmel_tsadcc {
 	struct input_dev	*input;
@@ -97,9 +108,46 @@ struct atmel_tsadcc {
 };
 
 static void __iomem		*tsc_base;
+static unsigned int		trigger_period;
 
 #define atmel_tsadcc_read(reg)		__raw_readl(tsc_base + (reg))
 #define atmel_tsadcc_write(reg, val)	__raw_writel((val), tsc_base + (reg))
+
+static unsigned int do_filter(unsigned int val[], int count, int needed) {
+	int i, j;
+	int max_delta, max_delta_index;
+	unsigned int average;
+
+	for (i = count; i > needed; i--) {
+		average = 0;
+		for (j = 0; j < i; j++)
+			average += val[j];
+		average /= i;
+
+		max_delta = 0;
+		max_delta_index = -1;
+		for (j = 0; j < i; j++) {
+			if (abs(val[j] - average) > max_delta) {
+				max_delta = abs(val[j] - average);
+				max_delta_index = j;
+			}
+		}
+
+		if (max_delta_index < 0)
+			return average;
+
+		if (max_delta_index < i - 1)
+			for (j = 0; j < i - max_delta_index; j++)
+				val[max_delta_index + j] = val[max_delta_index + j + 1];
+	}
+
+	average = 0;
+	for (i = 0; i < needed; i++)
+		average += val[i];
+	average /= needed;
+
+	return average;
+}
 
 static irqreturn_t atmel_tsadcc_interrupt(int irq, void *dev)
 {
@@ -108,6 +156,7 @@ static irqreturn_t atmel_tsadcc_interrupt(int irq, void *dev)
 
 	unsigned int status;
 	unsigned int reg;
+	static int count = 0;
 
 	status = atmel_tsadcc_read(ATMEL_TSADCC_SR);
 	status &= atmel_tsadcc_read(ATMEL_TSADCC_IMR);
@@ -124,6 +173,7 @@ static irqreturn_t atmel_tsadcc_interrupt(int irq, void *dev)
 
 		input_report_key(input_dev, BTN_TOUCH, 0);
 		ts_dev->bufferedmeasure = 0;
+		input_report_abs(input_dev, ABS_PRESSURE, 0);
 		input_sync(input_dev);
 
 	} else if (status & ATMEL_TSADCC_PENCNT) {
@@ -136,11 +186,13 @@ static irqreturn_t atmel_tsadcc_interrupt(int irq, void *dev)
 		atmel_tsadcc_write(ATMEL_TSADCC_IER,
 				   ATMEL_TSADCC_EOC(3) | ATMEL_TSADCC_NOCNT);
 		atmel_tsadcc_write(ATMEL_TSADCC_TRGR,
-				   ATMEL_TSADCC_TRGMOD_PERIOD | (0x0FFF << 16));
+				   ATMEL_TSADCC_TRGMOD_PERIOD | (trigger_period << 16));
+
+		count = 0;
 
 	} else if (status & ATMEL_TSADCC_EOC(3)) {
 		/* Conversion finished */
-
+#if defined(CONFIG_MACH_AT91SAM9G45EKES) || defined(CONFIG_MACH_AT91SAM9M10EKES)
 		if (ts_dev->bufferedmeasure) {
 			/* Last measurement is always discarded, since it can
 			 * be erroneous.
@@ -148,9 +200,11 @@ static irqreturn_t atmel_tsadcc_interrupt(int irq, void *dev)
 			input_report_abs(input_dev, ABS_X, ts_dev->prev_absx);
 			input_report_abs(input_dev, ABS_Y, ts_dev->prev_absy);
 			input_report_key(input_dev, BTN_TOUCH, 1);
+			input_report_abs(input_dev, ABS_PRESSURE, 7500);
 			input_sync(input_dev);
 		} else
 			ts_dev->bufferedmeasure = 1;
+#endif
 
 		/* Now make new measurement */
 		ts_dev->prev_absx = atmel_tsadcc_read(ATMEL_TSADCC_CDR3) << 10;
@@ -158,8 +212,31 @@ static irqreturn_t atmel_tsadcc_interrupt(int irq, void *dev)
 
 		ts_dev->prev_absy = atmel_tsadcc_read(ATMEL_TSADCC_CDR1) << 10;
 		ts_dev->prev_absy /= atmel_tsadcc_read(ATMEL_TSADCC_CDR0);
-	}
 
+#if defined(CONFIG_MACH_AT91SAM9M10G45EK)
+		{
+		static unsigned int point_buffer_x[COUNT_MAX];
+		static unsigned int point_buffer_y[COUNT_MAX];
+
+		if (count < COUNT_MAX) {
+			point_buffer_x[count] = ts_dev->prev_absx;
+			point_buffer_y[count] = ts_dev->prev_absy;
+			count++;
+		} else {
+			unsigned int x, y;
+
+			count = 0;
+			x = do_filter(point_buffer_x, COUNT_MAX, COUNT_MAX * 3 / 4);
+			y = do_filter(point_buffer_y, COUNT_MAX, COUNT_MAX * 3 / 4);
+			input_report_abs(input_dev, ABS_X, x);
+			input_report_abs(input_dev, ABS_Y, y);
+			input_report_key(input_dev, BTN_TOUCH, 1);
+			input_report_abs(input_dev, ABS_PRESSURE, 7500);
+			input_sync(input_dev);
+		}
+		}
+#endif
+	}
 	return IRQ_HANDLED;
 }
 
@@ -172,9 +249,11 @@ static int __devinit atmel_tsadcc_probe(struct platform_device *pdev)
 	struct atmel_tsadcc	*ts_dev;
 	struct input_dev	*input_dev;
 	struct resource		*res;
+	struct at91_tsadcc_data *pdata = pdev->dev.platform_data;
 	int		err = 0;
 	unsigned int	prsc;
 	unsigned int	reg;
+	unsigned int	startup_time;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -242,11 +321,12 @@ static int __devinit atmel_tsadcc_probe(struct platform_device *pdev)
 	input_dev->phys = ts_dev->phys;
 	input_dev->dev.parent = &pdev->dev;
 
-	input_dev->evbit[0] = BIT_MASK(EV_KEY) | BIT_MASK(EV_ABS);
-	input_dev->keybit[BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH);
-
+	__set_bit(EV_ABS, input_dev->evbit);
 	input_set_abs_params(input_dev, ABS_X, 0, 0x3FF, 0, 0);
 	input_set_abs_params(input_dev, ABS_Y, 0, 0x3FF, 0, 0);
+	input_set_abs_params(input_dev, ABS_PRESSURE, 0, 15000, 0, 0);
+
+	input_set_capability(input_dev, EV_KEY, BTN_TOUCH);
 
 	/* clk_enable() always returns 0, no need to check it */
 	clk_enable(ts_dev->clk);
@@ -254,19 +334,49 @@ static int __devinit atmel_tsadcc_probe(struct platform_device *pdev)
 	prsc = clk_get_rate(ts_dev->clk);
 	dev_info(&pdev->dev, "Master clock is set at: %d Hz\n", prsc);
 
-	prsc = prsc / ADC_CLOCK / 2 - 1;
+	if (!pdata)
+		goto err_fail;
+
+	if (!pdata->adc_clock)
+		pdata->adc_clock = ADC_DEFAULT_CLOCK;
+
+	prsc = (prsc / (2 * pdata->adc_clock)) - 1;
+
+#if defined(CONFIG_MACH_AT91SAM9M10G45EK)
+	trigger_period = pdata->adc_clock / (200 * COUNT_MAX) -1;
+	if (trigger_period < 1)
+		trigger_period = 1;
+	startup_time = (60 * pdata->adc_clock) / (8 * 1000000) - 1;
+	if (startup_time < 1)
+		startup_time = 1;
+#else
+	trigger_period =  0x0FFF;
+	startup_time = 0x26;
+#endif
+
+	/* saturate if this value is too high */
+	if (cpu_is_at91sam9rl()) {
+		if (prsc > PRESCALER_VAL(ATMEL_TSADCC_PRESCAL))
+			prsc = PRESCALER_VAL(ATMEL_TSADCC_PRESCAL);
+	} else {
+		if (prsc > PRESCALER_VAL(ATMEL_TSADCC_EPRESCAL))
+			prsc = PRESCALER_VAL(ATMEL_TSADCC_EPRESCAL);
+	}
+
+	dev_info(&pdev->dev, "Prescaler is set at: %d\n", prsc);
 
 	reg = ATMEL_TSADCC_TSAMOD_TS_ONLY_MODE		|
 		((0x00 << 5) & ATMEL_TSADCC_SLEEP)	|	/* Normal Mode */
 		((0x01 << 6) & ATMEL_TSADCC_PENDET)	|	/* Enable Pen Detect */
-		((prsc << 8) & ATMEL_TSADCC_PRESCAL)	|	/* PRESCAL */
-		((0x13 << 16) & ATMEL_TSADCC_STARTUP)	|	/* STARTUP */
-		((0x0F << 28) & ATMEL_TSADCC_PENDBC);		/* PENDBC */
+		(prsc << 8)				|
+		((startup_time << 16) & ATMEL_TSADCC_STARTUP)	|
+		((pdata->pendet_debounce << 28) & ATMEL_TSADCC_PENDBC);
 
 	atmel_tsadcc_write(ATMEL_TSADCC_CR, ATMEL_TSADCC_SWRST);
 	atmel_tsadcc_write(ATMEL_TSADCC_MR, reg);
 	atmel_tsadcc_write(ATMEL_TSADCC_TRGR, ATMEL_TSADCC_TRGMOD_NONE);
-	atmel_tsadcc_write(ATMEL_TSADCC_TSR, (0x3 << 24) & ATMEL_TSADCC_TSSHTIM);
+	atmel_tsadcc_write(ATMEL_TSADCC_TSR,
+		(pdata->ts_sample_hold_time << 24) & ATMEL_TSADCC_TSSHTIM);
 
 	atmel_tsadcc_read(ATMEL_TSADCC_SR);
 	atmel_tsadcc_write(ATMEL_TSADCC_IER, ATMEL_TSADCC_PENCNT);

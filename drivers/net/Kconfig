@@ -219,7 +219,7 @@ config MII
 
 config MACB
 	tristate "Atmel MACB support"
-	depends on AVR32 || ARCH_AT91SAM9260 || ARCH_AT91SAM9263 || ARCH_AT91SAM9G20 || ARCH_AT91CAP9 || ARCH_AT572D940HF
+	depends on AVR32 || ARCH_AT91SAM9260 || ARCH_AT91SAM9263 || ARCH_AT91SAM9G20 || ARCH_AT91SAM9G45 || ARCH_AT91SAM9M10 || ARCH_AT91CAP9 || ARCH_AT572D940HF
 	select PHYLIB
 	help
 	  The Atmel MACB ethernet interface is found on many AT32 and AT91
@@ -227,6 +227,12 @@ config MACB
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called macb.
+
+config MACB_TX_SRAM
+	bool "Atmel MACB TX buffers in internal SRAM"
+	depends on NET_ETHERNET && MACB && (ARCH_AT91SAM9260 || ARCH_AT91SAM9263)
+	help
+		Use internal SRAM for TX buffers.
 
 source "drivers/net/arm/Kconfig"
 

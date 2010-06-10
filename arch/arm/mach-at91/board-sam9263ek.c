@@ -155,7 +155,7 @@ static struct spi_board_info ek_spi_devices[] = {
 static struct at91_mmc_data __initdata ek_mmc_data = {
 	.wire4		= 1,
 	.det_pin	= AT91_PIN_PE18,
-	.wp_pin		= AT91_PIN_PE19,
+//	.wp_pin		= ... not connected
 //	.vcc_pin	= ... not connected
 };
 
@@ -365,9 +365,9 @@ static void __init ek_add_device_buttons(void) {}
 
 /*
  * AC97
+ * reset_pin is not connected: NRST
  */
-static struct atmel_ac97_data ek_ac97_data = {
-	.reset_pin	= AT91_PIN_PA13,
+static struct ac97c_platform_data ek_ac97_data = {
 };
 
 

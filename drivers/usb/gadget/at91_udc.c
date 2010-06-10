@@ -366,6 +366,13 @@ rescan:
 	if (is_done)
 		done(ep, req, 0);
 	else if (ep->is_pingpong) {
+		/*
+		 * One dummy read to delay the code because of a HW glitch:
+		 * CSR returns bad RXCOUNT when read too soon after updating
+		 * RX_DATA_BK flags.
+		 */
+		csr = __raw_readl(creg);
+
 		bufferspace -= count;
 		buf += count;
 		goto rescan;
@@ -892,7 +899,7 @@ static void pullup(struct at91_udc *udc, int is_on)
 
 			txvc |= AT91_UDP_TXVC_PUON;
 			at91_udp_write(udc, AT91_UDP_TXVC, txvc);
-		} else if (cpu_is_at91sam9261()) {
+		} else if (cpu_is_at91sam9261() || cpu_is_at91sam9g10()) {
 			u32	usbpucr;
 
 			usbpucr = at91_sys_read(AT91_MATRIX_USBPUCR);
@@ -910,7 +917,7 @@ static void pullup(struct at91_udc *udc, int is_on)
 
 			txvc &= ~AT91_UDP_TXVC_PUON;
 			at91_udp_write(udc, AT91_UDP_TXVC, txvc);
-		} else if (cpu_is_at91sam9261()) {
+		} else if (cpu_is_at91sam9261() || cpu_is_at91sam9g10()) {
 			u32	usbpucr;
 
 			usbpucr = at91_sys_read(AT91_MATRIX_USBPUCR);
@@ -1692,7 +1699,7 @@ static int __init at91udc_probe(struct platform_device *pdev)
 		udc->ep[3].maxpacket = 64;
 		udc->ep[4].maxpacket = 512;
 		udc->ep[5].maxpacket = 512;
-	} else if (cpu_is_at91sam9261()) {
+	} else if (cpu_is_at91sam9261() || cpu_is_at91sam9g10()) {
 		udc->ep[3].maxpacket = 64;
 	} else if (cpu_is_at91sam9263()) {
 		udc->ep[0].maxpacket = 64;

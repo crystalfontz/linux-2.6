@@ -33,9 +33,21 @@
 /* Make the IP header word-aligned (the ethernet header is 14 bytes) */
 #define RX_OFFSET		2
 
-#define TX_RING_SIZE		128
+#if defined(CONFIG_ARCH_AT91) && defined(CONFIG_MACB_TX_SRAM)
+	#if defined(CONFIG_ARCH_AT91SAM9260)
+		#define TX_RING_SIZE       2
+	#elif defined(CONFIG_ARCH_AT91SAM9263)
+		#define TX_RING_SIZE       32
+	#endif
+	#define TX_BUFFER_SIZE       1536
+	#define TX_RING_BYTES        (sizeof(struct dma_desc) * TX_RING_SIZE)
+	#define TX_DMA_SIZE      ((TX_RING_BYTES) + (TX_RING_SIZE) * (TX_BUFFER_SIZE))
+#else
+	#define TX_RING_SIZE     128
+	#define TX_RING_BYTES        (sizeof(struct dma_desc) * TX_RING_SIZE)
+#endif
+
 #define DEF_TX_RING_PENDING	(TX_RING_SIZE - 1)
-#define TX_RING_BYTES		(sizeof(struct dma_desc) * TX_RING_SIZE)
 
 #define TX_RING_GAP(bp)						\
 	(TX_RING_SIZE - (bp)->tx_pending)
@@ -378,8 +390,10 @@ static void macb_tx(struct macb *bp)
 
 		dev_dbg(&bp->pdev->dev, "skb %u (data %p) TX complete\n",
 			tail, skb->data);
+#if !defined(CONFIG_MACB_TX_SRAM)
 		dma_unmap_single(&bp->pdev->dev, rp->mapping, skb->len,
 				 DMA_TO_DEVICE);
+#endif
 		bp->stats.tx_packets++;
 		bp->stats.tx_bytes += skb->len;
 		rp->skb = NULL;
@@ -635,8 +649,13 @@ static int macb_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	entry = bp->tx_head;
 	dev_dbg(&bp->pdev->dev, "Allocated ring entry %u\n", entry);
+#if defined(CONFIG_ARCH_AT91) && defined(CONFIG_MACB_TX_SRAM)
+	mapping = bp->tx_ring[entry].addr;
+	memcpy(bp->tx_buffers + entry * TX_BUFFER_SIZE, skb->data, len);
+#else
 	mapping = dma_map_single(&bp->pdev->dev, skb->data,
 				 len, DMA_TO_DEVICE);
+#endif
 	bp->tx_skb[entry].skb = skb;
 	bp->tx_skb[entry].mapping = mapping;
 	dev_dbg(&bp->pdev->dev, "Mapped skb data %p to DMA addr %08lx\n",
@@ -647,7 +666,9 @@ static int macb_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	if (entry == (TX_RING_SIZE - 1))
 		ctrl |= MACB_BIT(TX_WRAP);
 
+#if !defined(CONFIG_MACB_TX_SRAM)
 	bp->tx_ring[entry].addr = mapping;
+#endif
 	bp->tx_ring[entry].ctrl = ctrl;
 	wmb();
 
@@ -678,8 +699,12 @@ static void macb_free_consistent(struct macb *bp)
 		bp->rx_ring = NULL;
 	}
 	if (bp->tx_ring) {
+#if defined(CONFIG_ARCH_AT91) && defined(CONFIG_MACB_TX_SRAM)
+		iounmap((void *)bp->tx_ring);
+#else
 		dma_free_coherent(&bp->pdev->dev, TX_RING_BYTES,
 				  bp->tx_ring, bp->tx_ring_dma);
+#endif
 		bp->tx_ring = NULL;
 	}
 	if (bp->rx_buffers) {
@@ -688,6 +713,11 @@ static void macb_free_consistent(struct macb *bp)
 				  bp->rx_buffers, bp->rx_buffers_dma);
 		bp->rx_buffers = NULL;
 	}
+
+#if defined(CONFIG_ARCH_AT91) && defined(CONFIG_MACB_TX_SRAM)
+	if (bp->tx_ring_dma)
+		release_mem_region(bp->tx_ring_dma, TX_DMA_SIZE);
+#endif
 }
 
 static int macb_alloc_consistent(struct macb *bp)
@@ -708,14 +738,45 @@ static int macb_alloc_consistent(struct macb *bp)
 		"Allocated RX ring of %d bytes at %08lx (mapped %p)\n",
 		size, (unsigned long)bp->rx_ring_dma, bp->rx_ring);
 
+#if defined(CONFIG_ARCH_AT91) && defined(CONFIG_MACB_TX_SRAM)
+#if  defined(CONFIG_ARCH_AT91SAM9260)
+	if (!cpu_is_at91sam9xe()
+	&& request_mem_region(AT91SAM9260_SRAM0_BASE, TX_DMA_SIZE, "macb")) {
+		bp->tx_ring_dma = AT91SAM9260_SRAM0_BASE;
+	} else {
+		if (request_mem_region(AT91SAM9260_SRAM1_BASE, TX_DMA_SIZE, "macb")) {
+			bp->tx_ring_dma = AT91SAM9260_SRAM1_BASE;
+		} else {
+			printk(KERN_WARNING "Cannot request SRAM memory for TX ring, already used\n");
+			return -EBUSY;
+		}
+	}
+#elif defined(CONFIG_ARCH_AT91SAM9263)
+	if (request_mem_region(AT91SAM9263_SRAM0_BASE, TX_DMA_SIZE, "macb")) {
+		bp->tx_ring_dma = AT91SAM9263_SRAM0_BASE;
+	} else {
+		printk(KERN_WARNING "Cannot request SRAM memory for TX ring, already used\n");
+		return -EBUSY;
+	}
+#endif
+
+	bp->tx_ring = ioremap(bp->tx_ring_dma, TX_DMA_SIZE);
+	if (!bp->tx_ring)
+		return -ENOMEM;
+
+	bp->tx_buffers_dma = bp->tx_ring_dma + TX_RING_BYTES;
+	bp->tx_buffers = (char *) bp->tx_ring + TX_RING_BYTES;
+#else
 	size = TX_RING_BYTES;
 	bp->tx_ring = dma_alloc_coherent(&bp->pdev->dev, size,
 					 &bp->tx_ring_dma, GFP_KERNEL);
 	if (!bp->tx_ring)
 		goto out_err;
+
 	dev_dbg(&bp->pdev->dev,
 		"Allocated TX ring of %d bytes at %08lx (mapped %p)\n",
 		size, (unsigned long)bp->tx_ring_dma, bp->tx_ring);
+#endif
 
 	size = RX_RING_SIZE * RX_BUFFER_SIZE;
 	bp->rx_buffers = dma_alloc_coherent(&bp->pdev->dev, size,
@@ -746,10 +807,18 @@ static void macb_init_rings(struct macb *bp)
 	}
 	bp->rx_ring[RX_RING_SIZE - 1].addr |= MACB_BIT(RX_WRAP);
 
+#if defined(CONFIG_ARCH_AT91) && defined(CONFIG_MACB_TX_SRAM)
+	for (i = 0; i < TX_RING_SIZE; i++) {
+		bp->tx_ring[i].addr = bp->tx_buffers_dma + i * TX_BUFFER_SIZE;
+		bp->tx_ring[i].ctrl = MACB_BIT(TX_USED);
+	}
+#else
 	for (i = 0; i < TX_RING_SIZE; i++) {
 		bp->tx_ring[i].addr = 0;
 		bp->tx_ring[i].ctrl = MACB_BIT(TX_USED);
 	}
+#endif
+
 	bp->tx_ring[TX_RING_SIZE - 1].ctrl |= MACB_BIT(TX_WRAP);
 
 	bp->rx_tail = bp->tx_head = bp->tx_tail = 0;

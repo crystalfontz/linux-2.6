@@ -369,8 +369,13 @@ struct macb {
 	struct dma_desc		*tx_ring;
 	struct ring_info	*tx_skb;
 
+#if defined(CONFIG_ARCH_AT91)
+	void            *tx_buffers;
+#endif
+
 	spinlock_t		lock;
 	struct platform_device	*pdev;
+	struct clk      *macb_clk;
 	struct clk		*pclk;
 	struct clk		*hclk;
 	struct net_device	*dev;
@@ -381,6 +386,10 @@ struct macb {
 	dma_addr_t		rx_ring_dma;
 	dma_addr_t		tx_ring_dma;
 	dma_addr_t		rx_buffers_dma;
+
+#if defined(CONFIG_ARCH_AT91)
+	dma_addr_t      tx_buffers_dma;
+#endif
 
 	unsigned int		rx_pending, tx_pending;
 
