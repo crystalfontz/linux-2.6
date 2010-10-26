@@ -192,7 +192,7 @@ static irqreturn_t atmel_tsadcc_interrupt(int irq, void *dev)
 
 	} else if (status & ATMEL_TSADCC_EOC(3)) {
 		/* Conversion finished */
-#if defined(CONFIG_MACH_AT91SAM9G45EKES) || defined(CONFIG_MACH_AT91SAM9M10EKES)
+#if defined(CONFIG_MACH_AT91SAM9G45EKES) || defined(CONFIG_MACH_AT91SAM9M10EKES) || defined(CONFIG_MACH_CFA_10022)
 		if (ts_dev->bufferedmeasure) {
 			/* Last measurement is always discarded, since it can
 			 * be erroneous.

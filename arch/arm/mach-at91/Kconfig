@@ -413,6 +413,12 @@ config MACH_AT91SAM9G45EKES
 	  "ES" at the end of the name means that this board is an
 	  Engineering Sample.
 
+ config MACH_CFA_10022
+	bool "Crystalfontz America, Inc. CFA-910 E-Ink Platform (CFA-10022 v0.3 Based)"
+	depends on ARCH_AT91SAM9G45
+	help
+	  Select this if you are using a Crystalfontz CFA-10022.
+
 endif
 
 # ----------------------------------------------------------

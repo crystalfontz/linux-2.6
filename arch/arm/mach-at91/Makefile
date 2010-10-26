@@ -76,6 +76,9 @@ obj-$(CONFIG_MACH_AT91SAM9G45EKES) += board-sam9m10g45ek.o
 obj-$(CONFIG_MACH_AT91SAM9M10EKES) += board-sam9m10g45ek.o
 obj-$(CONFIG_MACH_AT91SAM9M10G45EK) += board-sam9m10g45ek.o
 
+# CFA_10022 board-specific support
+obj-$(CONFIG_MACH_CFA_10022) += board-cfa10022.o
+
 # AT91CAP9 board-specific support
 obj-$(CONFIG_MACH_AT91CAP9ADK)	+= board-cap9adk.o
 
