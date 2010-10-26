@@ -203,6 +203,8 @@ struct atmel_mci_slot {
 
 	int			detect_pin;
 	int			wp_pin;
+	void			(*poweroff)(void);	/* Power off function */
+	void			(*poweron)(void);	/* Power on function */
 
 	struct timer_list	detect_timer;
 };
@@ -1016,15 +1018,19 @@ static void atmci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	}
 
 	switch (ios->power_mode) {
+	case MMC_POWER_OFF:
+		slot->poweroff();
+		break;
 	case MMC_POWER_UP:
+		slot->poweron();
+		break;
+	case MMC_POWER_ON:
 		set_bit(ATMCI_CARD_NEED_INIT, &slot->flags);
 		break;
 	default:
+		WARN_ON(1);
 		/*
-		 * TODO: None of the currently available AVR32-based
-		 * boards allow MMC power to be turned off. Implement
-		 * power control when this can be tested properly.
-		 *
+		 * TODO:
 		 * We also need to hook this into the clock management
 		 * somehow so that newly inserted cards aren't
 		 * subjected to a fast clock before we have a chance
@@ -1577,6 +1583,10 @@ static irqreturn_t atmci_detect_interrupt(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static void null_power_func(void)
+{
+}
+
 static int __init atmci_init_slot(struct atmel_mci *host,
 		struct mci_slot_pdata *slot_data, unsigned int id,
 		u32 sdc_reg)
@@ -1594,6 +1604,14 @@ static int __init atmci_init_slot(struct atmel_mci *host,
 	slot->detect_pin = slot_data->detect_pin;
 	slot->wp_pin = slot_data->wp_pin;
 	slot->sdc_reg = sdc_reg;
+	if (slot_data->poweron)
+		slot->poweron = slot_data->poweron;
+	else
+		slot->poweron = null_power_func;
+	if (slot_data->poweroff)
+		slot->poweroff = slot_data->poweroff;
+	else
+		slot->poweroff = null_power_func;
 
 	mmc->ops = &atmci_ops;
 	mmc->f_min = DIV_ROUND_UP(host->bus_hz, 512);

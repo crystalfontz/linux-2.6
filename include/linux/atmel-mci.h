@@ -25,6 +25,8 @@ struct mci_slot_pdata {
 	unsigned int		bus_width;
 	int			detect_pin;
 	int			wp_pin;
+	void			(*poweroff)(void);	/* Power off function */
+	void			(*poweron)(void);	/* Power on function */
 };
 
 /**
