@@ -63,13 +63,16 @@
 
 #define STRING_MANUFACTURER_IDX		0
 #define STRING_PRODUCT_IDX		1
-#define STRING_DESCRIPTION_IDX		2
+#define STRING_SERIAL_IDX		2
+#define STRING_DESCRIPTION_IDX		3
 
 static char manufacturer[50];
+static char serialnum[25];
 
 static struct usb_string strings_dev[] = {
 	[STRING_MANUFACTURER_IDX].s = manufacturer,
 	[STRING_PRODUCT_IDX].s = GS_VERSION_NAME,
+	[STRING_SERIAL_IDX].s = serialnum,
 	[STRING_DESCRIPTION_IDX].s = NULL /* updated; f(use_acm) */,
 	{  } /* end of list */
 };
@@ -175,7 +178,7 @@ static int __init gs_bind(struct usb_composite_dev *cdev)
 	 * contents can be overridden by the composite_dev glue.
 	 */
 
-	/* device description: manufacturer, product */
+	/* device description: manufacturer, product, serialnum */
 	snprintf(manufacturer, sizeof manufacturer, "%s %s with %s",
 		init_utsname()->sysname, init_utsname()->release,
 		gadget->name);
@@ -192,6 +195,14 @@ static int __init gs_bind(struct usb_composite_dev *cdev)
 	strings_dev[STRING_PRODUCT_IDX].id = status;
 
 	device_desc.iProduct = status;
+
+	snprintf(serialnum, sizeof serialnum, "non-unique");
+	status = usb_string_id(cdev);
+	if (status < 0)
+		goto fail;
+	strings_dev[STRING_SERIAL_IDX].id = status;
+
+	device_desc.iSerialNumber = status;
 
 	/* config description */
 	status = usb_string_id(cdev);
