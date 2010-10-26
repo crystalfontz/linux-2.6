@@ -65,6 +65,13 @@ config GPIO_SYSFS
 
 # put expanders in the right section, in alphabetical order
 
+comment "Virtual GPIO expanders:"
+
+config GPIO_INVERTED
+	bool "Virtual Inverted GPIO support"
+	help
+	  Say yes here to support inverting a gpio in software
+
 comment "Memory mapped GPIO expanders:"
 
 config GPIO_XILINX
