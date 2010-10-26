@@ -143,6 +143,25 @@ EXPORT_SYMBOL(at91_set_A_periph);
 
 
 /*
+ * ask if the pin is muxed to the "A" internal peripheral role.
+ */
+int __init_or_module at91_is_A_periph(unsigned pin)
+{
+	void __iomem	*pio = pin_to_controller(pin);
+	unsigned	mask = pin_to_mask(pin);
+
+	if (!pio)
+		return -EINVAL;
+
+	if (!(__raw_readl(pio + PIO_PSR) & mask) && !(__raw_readl(pio + PIO_ABSR) & mask))
+		return 1;
+	else
+		return 0;
+}
+EXPORT_SYMBOL(at91_is_A_periph);
+
+
+/*
  * mux the pin to the "B" internal peripheral role.
  */
 int __init_or_module at91_set_B_periph(unsigned pin, int use_pullup)

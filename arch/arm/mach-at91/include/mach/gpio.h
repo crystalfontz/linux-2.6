@@ -191,6 +191,7 @@
 /* setup setup routines, called from board init or driver probe() */
 extern int __init_or_module at91_set_GPIO_periph(unsigned pin, int use_pullup);
 extern int __init_or_module at91_set_A_periph(unsigned pin, int use_pullup);
+extern int __init_or_module at91_is_A_periph(unsigned pin);
 extern int __init_or_module at91_set_B_periph(unsigned pin, int use_pullup);
 extern int __init_or_module at91_set_gpio_input(unsigned pin, int use_pullup);
 extern int __init_or_module at91_set_gpio_output(unsigned pin, int value);
