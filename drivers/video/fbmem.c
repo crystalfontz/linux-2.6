@@ -1017,6 +1017,14 @@ fb_blank(struct fb_info *info, int blank)
  	return ret;
 }
 
+static int fb_set_damage(struct fb_info *info, struct fb_damage_user *udamage)
+{
+	if (info->fbops->fb_set_damage)
+		return info->fbops->fb_set_damage(info, udamage);
+
+	return -ENOTTY;
+}
+
 static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg)
 {
@@ -1027,6 +1035,7 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 	struct fb_cmap cmap_from;
 	struct fb_cmap_user cmap;
 	struct fb_event event;
+	struct fb_damage_user udamage;
 	void __user *argp = (void __user *)arg;
 	long ret = 0;
 
@@ -1086,6 +1095,12 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		unlock_fb_info(info);
 		if (ret == 0 && copy_to_user(argp, &var, sizeof(var)))
 			return -EFAULT;
+		break;
+	case FBIOPUT_DAMAGE:
+		if (copy_from_user(&udamage, argp, sizeof(udamage)))
+			ret = -EFAULT;
+		else
+			ret = fb_set_damage(info, &udamage);
 		break;
 	case FBIO_CURSOR:
 		ret = -EINVAL;

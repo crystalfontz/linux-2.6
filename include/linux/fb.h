@@ -37,7 +37,8 @@ struct dentry;
 #define FBIOGET_HWCINFO         0x4616
 #define FBIOPUT_MODEINFO        0x4617
 #define FBIOGET_DISPINFO        0x4618
-
+/* to allow userspace to provide screen damage information to drivers */
+#define FBIOPUT_DAMAGE          0x4619
 
 #define FB_TYPE_PACKED_PIXELS		0	/* Packed Pixels	*/
 #define FB_TYPE_PLANES			1	/* Non interleaved planes */
@@ -362,6 +363,18 @@ struct fb_image {
 	struct fb_cmap cmap;	/* color map info */
 };
 
+struct fb_damage_rect {
+	__u16 x;
+	__u16 y;
+	__u16 w;
+	__u16 h;
+};
+
+struct fb_damage_user {
+	__u32 len;		/* Number of entries */
+	struct fb_damage_rect __user *rects; /* array of damage rectangles */
+};
+
 /*
  * hardware cursor control
  */
@@ -593,9 +606,10 @@ struct fb_deferred_io {
 	/* delay between mkwrite and deferred handler */
 	unsigned long delay;
 	struct mutex lock; /* mutex that protects the page list */
-	struct list_head pagelist; /* list of touched pages */
+	int pagecount; /* count of pages */
+	unsigned long *pagemap; /* bitmap of touched pages */
 	/* callback */
-	void (*deferred_io)(struct fb_info *info, struct list_head *pagelist);
+	void (*deferred_io)(struct fb_info *info);
 };
 #endif
 
@@ -677,6 +691,10 @@ struct fb_ops {
 	/* get capability given var */
 	void (*fb_get_caps)(struct fb_info *info, struct fb_blit_caps *caps,
 			    struct fb_var_screeninfo *var);
+
+	/* provide damage information */
+	int (*fb_set_damage)(struct fb_info *info,
+				struct fb_damage_user *damage);
 };
 
 #ifdef CONFIG_FB_TILEBLITTING
@@ -995,6 +1013,8 @@ extern void fb_deferred_io_open(struct fb_info *info,
 extern void fb_deferred_io_cleanup(struct fb_info *info);
 extern int fb_deferred_io_fsync(struct file *file, struct dentry *dentry,
 				int datasync);
+ssize_t fb_defio_write(struct fb_info *info, const char __user *buf,
+				size_t count, loff_t *ppos);
 
 static inline bool fb_be_math(struct fb_info *info)
 {

@@ -30,7 +30,6 @@
 #include <linux/fb.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
-#include <linux/list.h>
 #include <linux/firmware.h>
 #include <linux/dma-mapping.h>
 #include <linux/uaccess.h>
@@ -464,20 +463,22 @@ static u16 metronomefb_dpy_update_page(struct metronomefb_par *par, int index)
 }
 
 /* this is called back from the deferred io workqueue */
-static void metronomefb_dpy_deferred_io(struct fb_info *info,
-				struct list_head *pagelist)
+static void metronomefb_dpy_deferred_io(struct fb_info *info)
 {
 	u16 cksum;
-	struct page *cur;
 	struct fb_deferred_io *fbdefio = info->fbdefio;
 	struct metronomefb_par *par = info->par;
+	int i;
 
-	/* walk the written page list and swizzle the data */
-	list_for_each_entry(cur, &fbdefio->pagelist, lru) {
-		cksum = metronomefb_dpy_update_page(par,
-					(cur->index << PAGE_SHIFT));
-		par->metromem_img_csum -= par->csum_table[cur->index];
-		par->csum_table[cur->index] = cksum;
+	/* walk the written page map and swizzle the data */
+	for (i = find_first_bit(fbdefio->pagemap, fbdefio->pagecount);
+		i < fbdefio->pagecount;
+		i = find_next_bit(fbdefio->pagemap, fbdefio->pagecount, i),
+		i++) {
+
+		cksum = metronomefb_dpy_update_page(par, (i << PAGE_SHIFT));
+		par->metromem_img_csum -= par->csum_table[i];
+		par->csum_table[i] = cksum;
 		par->metromem_img_csum += cksum;
 	}
 
@@ -511,55 +512,9 @@ static void metronomefb_imageblit(struct fb_info *info,
 	metronomefb_dpy_update(par);
 }
 
-/*
- * this is the slow path from userspace. they can seek and write to
- * the fb. it is based on fb_sys_write
- */
-static ssize_t metronomefb_write(struct fb_info *info, const char __user *buf,
-				size_t count, loff_t *ppos)
-{
-	struct metronomefb_par *par = info->par;
-	unsigned long p = *ppos;
-	void *dst;
-	int err = 0;
-	unsigned long total_size;
-
-	if (info->state != FBINFO_STATE_RUNNING)
-		return -EPERM;
-
-	total_size = info->fix.smem_len;
-
-	if (p > total_size)
-		return -EFBIG;
-
-	if (count > total_size) {
-		err = -EFBIG;
-		count = total_size;
-	}
-
-	if (count + p > total_size) {
-		if (!err)
-			err = -ENOSPC;
-
-		count = total_size - p;
-	}
-
-	dst = (void __force *)(info->screen_base + p);
-
-	if (copy_from_user(dst, buf, count))
-		err = -EFAULT;
-
-	if  (!err)
-		*ppos += count;
-
-	metronomefb_dpy_update(par);
-
-	return (err) ? err : count;
-}
-
 static struct fb_ops metronomefb_ops = {
 	.owner		= THIS_MODULE,
-	.fb_write	= metronomefb_write,
+	.fb_write	= fb_defio_write,
 	.fb_fillrect	= metronomefb_fillrect,
 	.fb_copyarea	= metronomefb_copyarea,
 	.fb_imageblit	= metronomefb_imageblit,
