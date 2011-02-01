@@ -81,7 +81,7 @@ struct broadsheetfb_par {
 struct broadsheet_board {
 	struct module *owner;
 	int (*init)(struct broadsheetfb_par *);
-	int (*init_post_run)(struct broadsheetfb_par *);
+	int (*init_pre_run)(struct broadsheetfb_par *);
 	int (*wait_for_rdy)(struct broadsheetfb_par *);
 	void (*cleanup)(struct broadsheetfb_par *);
 	int (*get_panel_type)(void);

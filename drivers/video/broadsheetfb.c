@@ -1030,6 +1030,11 @@ static void __devinit broadsheet_init(struct broadsheetfb_par *par)
  	int j;
  	int dpyw, dpyh;
 
+	/* pre sys run board init, power supplies, etc */
+	if (par->board->init_pre_run) {
+		par->board->init_pre_run(par);
+	}
+
 	broadsheet_send_command(par, BS_CMD_INIT_SYS_RUN);
 	/* the controller needs a second */
 	msleep(1000);
@@ -1040,11 +1045,6 @@ static void __devinit broadsheet_init(struct broadsheetfb_par *par)
 		broadsheet_set_ext_temp = __real_set_ext_temp;
 	} else {
 		broadsheet_set_ext_temp = __null_set_ext_temp;
-	}
-
-	/* post sys run board init, power supplies, etc */
-	if (par->board->init_post_run) {
-		par->board->init_post_run(par);
 	}
 
 	broadsheet_init_display(par);

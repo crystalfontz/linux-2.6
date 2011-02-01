@@ -385,7 +385,7 @@ static int eink_init_board(struct broadsheetfb_par *par)
 	return 0;
 }
 
-static int eink_init_board_post_run(struct broadsheetfb_par *par)
+static int eink_init_board_pre_run(struct broadsheetfb_par *par)
 {
 	/* Wakeup the TPS65180 out of Sleep */
 	return tps65180_wakeup(1);
@@ -495,7 +495,7 @@ static int eink_get_ext_temp(void)
 static struct broadsheet_board eink_board = {
 	.owner			= THIS_MODULE,
 	.init			= eink_init_board,
-	.init_post_run		= eink_init_board_post_run,
+	.init_pre_run		= eink_init_board_pre_run,
 	.cleanup		= eink_cleanup,
 	.set_hdb		= eink_set_hdb,
 	.get_hdb		= eink_get_hdb,
